@@ -60,9 +60,6 @@ configure: build-deps
 # Build the main project
 build: configure
     @echo "Building Help The Homeless Coin..."
-    @echo "Building LevelDB first..."
-    cd src/leveldb && $(MAKE) libleveldb.a libmemenv.a
-    @echo "Building main project..."
     $(MAKE) $(MAKEJOBS)
     @echo ""
     @echo "Build complete! Binaries are available:"
