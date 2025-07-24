@@ -56,6 +56,16 @@ case $host in
 esac
 dnl Require C++14 compiler (no GNU extensions)
 AX_CXX_COMPILE_STDCXX([14], [noext], [mandatory], [nodefault])
+
+dnl Handle Ubuntu 22.04 GCC versions
+if test "x$GXX" = "xyes"; then
+  GCC_VERSION=`$CXX -dumpversion | cut -d. -f1`
+  if test "$GCC_VERSION" -ge "11"; then
+    dnl Add flags for newer GCC versions
+    CXXFLAGS="$CXXFLAGS -Wno-deprecated-declarations -Wno-maybe-uninitialized"
+  fi
+fi
+
 dnl Check if -latomic is required for <std::atomic>
 CHECK_ATOMIC
 

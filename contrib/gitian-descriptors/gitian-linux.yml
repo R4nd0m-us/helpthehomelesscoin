@@ -2,21 +2,26 @@
 name: "dash-linux-0.14"
 enable_cache: true
 suites:
-- "bionic"
+- "jammy"  # Ubuntu 22.04
 architectures:
 - "amd64"
 packages:
 - "curl"
-- "g++-aarch64-linux-gnu"
-- "g++-7-aarch64-linux-gnu"
-- "gcc-7-aarch64-linux-gnu"
+- "g++-10-aarch64-linux-gnu"
+- "gcc-10-aarch64-linux-gnu"
+- "g++-10-arm-linux-gnueabihf"
+- "gcc-10-arm-linux-gnueabihf"
+- "g++-10-multilib"
+- "gcc-10-multilib"
+- "g++-10"
+- "gcc-10"
 - "binutils-aarch64-linux-gnu"
 - "g++-arm-linux-gnueabihf"
-- "g++-7-arm-linux-gnueabihf"
-- "gcc-7-arm-linux-gnueabihf"
+- "g++-11-arm-linux-gnueabihf"
+- "gcc-11-arm-linux-gnueabihf"
 - "binutils-arm-linux-gnueabihf"
-- "g++-7-multilib"
-- "gcc-7-multilib"
+- "g++-11-multilib"
+- "gcc-11-multilib"
 - "binutils-gold"
 - "git"
 - "pkg-config"
@@ -27,7 +32,6 @@ packages:
 - "faketime"
 - "bsdmainutils"
 - "ca-certificates"
-- "python"
 - "python3"
 - "libxkbcommon0"
 remotes:

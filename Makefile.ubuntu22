@@ -1,0 +1,23 @@
+# Ubuntu 22.04 specific build settings
+CXX = g++
+CC = gcc
+
+# Boost library paths for Ubuntu 22.04
+BOOST_CPPFLAGS = -I/usr/include
+BOOST_LDFLAGS = -L/usr/lib/x86_64-linux-gnu
+
+# OpenSSL paths
+OPENSSL_CPPFLAGS = -I/usr/include/openssl
+OPENSSL_LDFLAGS = -L/usr/lib/x86_64-linux-gnu
+
+# BDB paths  
+BDB_CPPFLAGS = -I/usr/include
+BDB_LDFLAGS = -L/usr/lib/x86_64-linux-gnu
+
+# ZMQ paths
+ZMQ_CPPFLAGS = -I/usr/include
+ZMQ_LDFLAGS = -L/usr/lib/x86_64-linux-gnu
+
+# Additional flags for Ubuntu 22.04
+CPPFLAGS += -DHAVE_BUILD_INFO -D__STDC_FORMAT_MACROS
+CXXFLAGS += -std=c++14 -fPIC -fstack-protector-strong

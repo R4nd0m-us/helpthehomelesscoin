@@ -1,23 +1,40 @@
-FROM ubuntu:bionic
+FROM ubuntu:22.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Build and base stuff
-# (zlib1g-dev and libssl-dev are needed for the Qt host binary builds, but should not be used by target binaries)
-# We split this up into multiple RUN lines as we might need to retry multiple times on Travis. This way we allow better
-# cache usage.
-RUN apt-get update
-RUN apt-get update && apt-get install -y git
-RUN apt-get update && apt-get install -y g++
-RUN apt-get update && apt-get install -y autotools-dev libtool m4 automake autoconf pkg-config
-RUN apt-get update && apt-get install -y zlib1g-dev libssl1.0-dev curl ccache bsdmainutils cmake
-RUN apt-get update && apt-get install -y python3 python3-dev
-RUN apt-get update && apt-get install -y python3-pip
+RUN apt-get update && apt-get install -y \
+    git \
+    gcc-10 \
+    g++-10 \
+    autotools-dev \
+    libtool \
+    m4 \
+    automake \
+    autoconf \
+    pkg-config \
+    zlib1g-dev \
+    libssl-dev \
+    curl \
+    ccache \
+    bsdmainutils \
+    cmake \
+    python3 \
+    python3-dev \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set GCC 10 as default
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 100
 
 # Python stuff
-RUN pip3 install pyzmq # really needed?
+RUN pip3 install pyzmq
 
-# dash_hash
+# dash_hash - fix the repository reference
 RUN git clone https://github.com/HTHcoin/Help-The-Homeless-Coin-0.14
-RUN cd HelpTheHomelessCoin && python3 setup.py install
+RUN cd Help-The-Homeless-Coin-0.14 && python3 setup.py install
 
 ARG USER_ID=1000
 ARG GROUP_ID=1000
