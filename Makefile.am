@@ -8,10 +8,18 @@ SUBDIRS = src
 if ENABLE_MAN
 SUBDIRS += doc/man
 endif
-.PHONY: deploy FORCE
+.PHONY: deploy FORCE build-depends
 
 GZIP_ENV="-9n"
 export PYTHONPATH
+
+# Auto-build dependencies before main build
+build-depends:
+    @echo "Building dependencies..."
+    $(MAKE) -C depends HOST=$(host) -j$(MAKEJOBS)
+
+# Make src depend on build-depends
+src: build-depends
 
 if BUILD_BITCOIN_LIBS
 pkgconfigdir = $(libdir)/pkgconfig

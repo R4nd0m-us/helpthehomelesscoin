@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Direct build script for Ubuntu 22.04
 set -e
 
 echo "Installing build dependencies..."
@@ -13,38 +12,22 @@ sudo apt install -y \
     pkg-config \
     bsdmainutils \
     python3 \
-    python3-pip \
-    libevent-dev \
-    libboost-system-dev \
-    libboost-filesystem-dev \
-    libboost-test-dev \
-    libboost-thread-dev \
-    libboost-chrono-dev \
-    libboost-program-options-dev \
+    cmake \
+    curl \
+    wget \
+    libgmp-dev \
     libssl-dev \
+    libevent-dev \
+    libboost-all-dev \
     libdb5.3-dev \
     libdb5.3++-dev \
     libminiupnpc-dev \
     libzmq3-dev \
-    libqrencode-dev \
-    libprotobuf-dev \
-    protobuf-compiler \
-    libqt5gui5 \
-    libqt5core5a \
-    libqt5dbus5 \
-    qttools5-dev \
-    qttools5-dev-tools \
-    qt5-qmake \
-    qtbase5-dev \
-    ccache \
-    git
+    ccache
 
-# Install Python dependencies
-pip3 install pyzmq
-
-echo "Building dependencies..."
+echo "Building dependencies (including BLS)..."
 cd depends
-make -j$(nproc) NO_QT=1 NO_UPNP=1
+make -j$(nproc) HOST=x86_64-unknown-linux-gnu
 cd ..
 
 echo "Configuring build..."
