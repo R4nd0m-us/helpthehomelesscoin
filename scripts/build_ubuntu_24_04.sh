@@ -14,7 +14,7 @@ CORES="$(nproc || echo 2)"
 sudo apt-get update
 sudo apt-get install -y \
   build-essential libtool autotools-dev automake pkg-config bsdmainutils cmake curl unzip \
-  python3 git libgmp-dev software-properties-common
+  python3 git libgmp-dev software-properties-common dos2unix
 
 # Try to install GCC/G++ 9 from the Ubuntu Toolchain PPA; fall back to system GCC if unavailable
 if ! command -v gcc-9 >/dev/null 2>&1; then
@@ -69,7 +69,7 @@ cd helpthehomelesscoin
 
 # Normalize potential CRLF line endings in depends to avoid GNU make parse errors
 find depends -type f \( -name "*.mk" -o -name "Makefile" -o -name "*.m4" \) -print0 | \
-  xargs -0 -I{} sed -i 's/\r$//' {}
+  xargs -0 dos2unix -q --allow-chown || true
 
 # 4) Build depends (uses updated Boost/BDB in repo)
 pushd depends
