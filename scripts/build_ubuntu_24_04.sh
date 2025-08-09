@@ -70,6 +70,8 @@ cd helpthehomelesscoin
 # Normalize potential CRLF line endings in depends to avoid GNU make parse errors
 find depends -type f \( -name "*.mk" -o -name "Makefile" -o -name "*.m4" \) -print0 | \
   xargs -0 dos2unix -q --allow-chown || true
+# Remove any stray leading tabs on non-recipe lines (guard against parse error)
+sed -i '240,248s/^\t//' depends/funcs.mk
 
 # 4) Build depends (uses updated Boost/BDB in repo)
 pushd depends
