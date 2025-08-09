@@ -12,11 +12,11 @@ $(package)_dependencies=gmp
 # This sed-based patch is scoped narrowly to v20181101 layout
 
 define $(package)_preprocess_cmds
-  sed -i.bak 's/blake2s_state S\[8\]\[1\];/blake2s_state S[8];/' contrib/relic/src/md/blake2.h && \
-  sed -i.bak 's/blake2s_state R\[1\];/blake2s_state R;/' contrib/relic/src/md/blake2.h && \
-  sed -i.bak 's/blake2b_state S\[4\]\[1\];/blake2b_state S[4];/' contrib/relic/src/md/blake2.h && \
-  sed -i.bak 's/blake2b_state R\[1\];/blake2b_state R;/' contrib/relic/src/md/blake2.h && \
-  sed -i.bak 's/blake2s_state S\[1\];/blake2s_state S;/' contrib/relic/src/md/blake2s-ref.c
+  # Only strip explicit aligned(N) attributes for GCC >= 13 to avoid array element alignment errors
+  ver=$$( "$($(package)_cc)" -dumpversion | cut -d. -f1 ); \
+  if [ -n "$$ver" ] && [ $$ver -ge 13 ]; then \
+    sed -i.bak -E 's/__attribute__\s*\(\(aligned\([0-9]+\)\)\)//g' contrib/relic/src/md/blake2.h; \
+  fi
 endef
 
 define $(package)_set_vars
