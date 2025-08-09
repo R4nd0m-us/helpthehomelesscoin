@@ -241,8 +241,10 @@ $(foreach package,$(all_packages),$(eval $(call int_get_build_id,$(package))))
 $(foreach package,$(all_packages),$(eval $(call int_config_attach_build_config,$(package))))
 
 #create build targets
-generated_targets := $(foreach package,$(all_packages),$(call int_add_cmds,$(package)))
-$(eval $(generated_targets))
+# Use a generated include file to avoid environment-specific parse quirks
+_rules_out := .depends-generated.mk
+$(file >$(_rules_out),$(foreach package,$(all_packages),$(call int_add_cmds,$(package))))
+include $(_rules_out)
 
 #special exception: if a toolchain package exists, all non-native packages depend on it
 $(foreach package,$(packages),$(eval $($(package)_unpacked): |$($($(host_arch)_$(host_os)_native_toolchain)_cached) ))
