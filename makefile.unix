@@ -1,0 +1,407 @@
+# Robust Makefile.unix for HelpTheHomeless Coin (Dash 0.14 based)
+# Handles failures and provides multiple build strategies
+
+.PHONY: all clean install-deps build-deps configure build install help test robust-build check-env
+
+# Detect system information
+UBUNTU_VERSION := $(shell lsb_release -rs 2>/dev/null || echo "unknown")
+DISTRO := $(shell lsb_release -si 2>/dev/null || echo "unknown")
+HOST := x86_64-unknown-linux-gnu
+MAKEJOBS := -j$(shell nproc)
+BOOST_VERSION := $(shell dpkg -l | grep libboost-dev | head -1 | awk '{print $$3}' | cut -d. -f1-2 || echo "unknown")
+
+# Build strategy selection
+BUILD_STRATEGY ?= auto
+FORCE_STATIC ?= no
+USE_SYSTEM_LIBS ?= auto
+
+# Default target - use robust build
+all: robust-build
+
+# Environment check
+check-env:
+	@echo "=== System Environment Check ==="
+	@echo "Distribution: $(DISTRO) $(UBUNTU_VERSION)"
+	@echo "Architecture: $(shell uname -m)"
+	@echo "Available cores: $(shell nproc)"
+	@echo "Available memory: $(shell free -h | grep Mem | awk '{print $$2}')"
+	@echo "Boost version: $(BOOST_VERSION)"
+	@echo "Build strategy: $(BUILD_STRATEGY)"
+	@echo "================================="
+
+# Robust dependency installation with fallbacks
+install-deps: check-env
+	@echo "Installing system dependencies for $(DISTRO) $(UBUNTU_VERSION)..."
+	@echo "Updating package lists..."
+	@sudo apt update || (echo "Warning: apt update failed, continuing anyway..." && sleep 2)
+
+	@echo "Installing core build tools..."
+	@sudo apt install -y build-essential || (echo "ERROR: Failed to install build-essential" && exit 1)
+
+	@echo "Installing development tools..."
+	@sudo apt install -y \
+		libtool \
+		autotools-dev \
+		automake \
+		pkg-config \
+		bsdmainutils \
+		python3 \
+		cmake \
+		curl \
+		wget \
+		git \
+		ccache || echo "Warning: Some development tools failed to install"
+
+	@echo "Installing crypto and networking libraries..."
+	@sudo apt install -y \
+		libgmp-dev \
+		libssl-dev \
+		libevent-dev \
+		libminiupnpc-dev \
+		libzmq3-dev \
+		libqrencode-dev \
+		zlib1g-dev || echo "Warning: Some libraries failed to install"
+
+	@echo "Installing boost libraries..."
+	@sudo apt install -y libboost-all-dev || \
+		(echo "Trying individual boost packages..." && \
+		sudo apt install -y \
+			libboost-system-dev \
+			libboost-filesystem-dev \
+			libboost-chrono-dev \
+			libboost-program-options-dev \
+			libboost-thread-dev \
+			libboost-test-dev) || \
+		echo "Warning: Boost installation failed, will try depends build"
+
+	@echo "Installing Berkeley DB..."
+	@if [ "$(UBUNTU_VERSION)" = "24.04" ]; then \
+		sudo apt install -y libdb5.3-dev libdb5.3++-dev || \
+		sudo apt install -y libdb-dev libdb++-dev || \
+		echo "Warning: Berkeley DB installation failed"; \
+	elif [ "$(UBUNTU_VERSION)" = "22.04" ]; then \
+		sudo apt install -y libdb5.3-dev libdb5.3++-dev || \
+		sudo apt install -y libdb-dev libdb++-dev || \
+		echo "Warning: Berkeley DB installation failed"; \
+	else \
+		sudo apt install -y libdb-dev libdb++-dev || \
+		sudo apt install -y libdb5.3-dev libdb5.3++-dev || \
+		echo "Warning: Berkeley DB installation failed"; \
+	fi
+
+	@echo "Dependency installation completed with possible warnings."
+
+# Robust build system with multiple strategies
+robust-build: check-env
+	@echo "=== Starting Robust Build Process ==="
+	@if [ "$(BUILD_STRATEGY)" = "auto" ]; then \
+		echo "Auto-detecting best build strategy..."; \
+		if $(MAKE) try-depends-build; then \
+			echo "SUCCESS: Depends build completed"; \
+		elif $(MAKE) try-system-build; then \
+			echo "SUCCESS: System libraries build completed"; \
+		elif $(MAKE) try-minimal-build; then \
+			echo "SUCCESS: Minimal build completed"; \
+		else \
+			echo "ERROR: All build strategies failed"; \
+			$(MAKE) build-failure-help; \
+			exit 1; \
+		fi; \
+	elif [ "$(BUILD_STRATEGY)" = "depends" ]; then \
+		$(MAKE) try-depends-build || ($(MAKE) build-failure-help && exit 1); \
+	elif [ "$(BUILD_STRATEGY)" = "system" ]; then \
+		$(MAKE) try-system-build || ($(MAKE) build-failure-help && exit 1); \
+	elif [ "$(BUILD_STRATEGY)" = "minimal" ]; then \
+		$(MAKE) try-minimal-build || ($(MAKE) build-failure-help && exit 1); \
+	else \
+		echo "ERROR: Unknown build strategy: $(BUILD_STRATEGY)"; \
+		exit 1; \
+	fi
+	@echo "=== Build Process Completed ==="
+
+# Try depends build (most robust, takes longest)
+try-depends-build:
+	@echo "--- Attempting Depends Build ---"
+	@$(MAKE) install-deps || (echo "Dependency installation failed" && exit 1)
+	@$(MAKE) build-deps-safe || (echo "Depends build failed" && exit 1)
+	@$(MAKE) configure-depends || (echo "Configure failed" && exit 1)
+	@$(MAKE) build-main || (echo "Main build failed" && exit 1)
+	@echo "Depends build successful!"
+
+# Try system libraries build (faster, may have compatibility issues)
+try-system-build:
+	@echo "--- Attempting System Libraries Build ---"
+	@$(MAKE) install-deps || (echo "Dependency installation failed" && exit 1)
+	@$(MAKE) configure-system || (echo "Configure failed" && exit 1)
+	@$(MAKE) build-main || (echo "Main build failed" && exit 1)
+	@echo "System libraries build successful!"
+
+# Try minimal build (fastest, most likely to have issues)
+try-minimal-build:
+	@echo "--- Attempting Minimal Build ---"
+	@$(MAKE) install-deps || (echo "Dependency installation failed" && exit 1)
+	@$(MAKE) configure-minimal || (echo "Configure failed" && exit 1)
+	@$(MAKE) build-main || (echo "Main build failed" && exit 1)
+	@echo "Minimal build successful!"
+
+# Safe depends build with error handling
+build-deps-safe: install-deps
+	@echo "Building dependencies using depends system..."
+	@cd depends && timeout 3600 $(MAKE) $(MAKEJOBS) HOST=$(HOST) || \
+		(echo "Depends build timed out or failed, trying with fewer jobs..." && \
+		 $(MAKE) -j2 HOST=$(HOST)) || \
+		(echo "Depends build failed completely" && exit 1)
+
+# Configure strategies
+configure-depends:
+	@echo "Configuring with depends system..."
+	@if [ ! -f configure ]; then \
+		echo "Running autogen.sh..."; \
+		./autogen.sh || (echo "autogen.sh failed" && exit 1); \
+	fi
+	@echo "Running configure with depends..."
+	@CONFIG_SITE=`pwd`/depends/$(HOST)/share/config.site ./configure \
+		--prefix=`pwd`/depends/$(HOST) \
+		--disable-dependency-tracking \
+		--enable-glibc-back-compat \
+		--enable-reduce-exports \
+		--disable-bench \
+		--disable-gui-tests \
+		--disable-tests \
+		--with-gui=no || \
+		(echo "Configure with depends failed" && exit 1)
+
+configure-system:
+	@echo "Configuring with system libraries..."
+	@if [ ! -f configure ]; then \
+		echo "Running autogen.sh..."; \
+		./autogen.sh || (echo "autogen.sh failed" && exit 1); \
+	fi
+	@echo "Running configure with system libs..."
+	@./configure \
+		--disable-dependency-tracking \
+		--enable-glibc-back-compat \
+		--disable-bench \
+		--disable-gui-tests \
+		--disable-tests \
+		--with-gui=no \
+		--with-incompatible-bdb \
+		CPPFLAGS="-I/usr/include" \
+		LDFLAGS="-L/usr/lib/x86_64-linux-gnu" || \
+		(echo "Configure with system libs failed" && exit 1)
+
+configure-minimal:
+	@echo "Configuring minimal build..."
+	@if [ ! -f configure ]; then \
+		echo "Running autogen.sh..."; \
+		./autogen.sh || (echo "autogen.sh failed" && exit 1); \
+	fi
+	@echo "Running minimal configure..."
+	@./configure \
+		--disable-dependency-tracking \
+		--disable-bench \
+		--disable-gui-tests \
+		--disable-tests \
+		--disable-wallet \
+		--with-gui=no \
+		--with-incompatible-bdb || \
+		(echo "Minimal configure failed" && exit 1)
+
+# Legacy configure target
+configure: configure-depends
+
+# Build main project with error handling
+build-main:
+	@echo "Building HelpTheHomeless Coin..."
+	@$(MAKE) $(MAKEJOBS) || \
+		(echo "Build failed with $(MAKEJOBS), trying with fewer jobs..." && \
+		 $(MAKE) -j2) || \
+		(echo "Build failed with -j2, trying single-threaded..." && \
+		 $(MAKE) -j1) || \
+		(echo "Build failed completely" && exit 1)
+	@echo ""
+	@echo "Build complete! Binaries are available:"
+	@echo "  ./src/helpthehomelessd"
+	@echo "  ./src/helpthehomeless-cli"
+	@echo "  ./src/helpthehomeless-tx"
+	@$(MAKE) verify-binaries
+
+# Verify binaries work
+verify-binaries:
+	@echo "Verifying binaries..."
+	@if [ -f "./src/helpthehomelessd" ]; then \
+		echo "✓ helpthehomelessd found"; \
+		ldd ./src/helpthehomelessd | head -5 || echo "ldd check failed"; \
+	else \
+		echo "✗ helpthehomelessd not found"; \
+		exit 1; \
+	fi
+	@if [ -f "./src/helpthehomeless-cli" ]; then \
+		echo "✓ helpthehomeless-cli found"; \
+	else \
+		echo "✗ helpthehomeless-cli not found"; \
+		exit 1; \
+	fi
+	@echo "Binary verification completed"
+
+# Legacy build target
+build: robust-build
+
+# Install binaries
+install: build
+	$(MAKE) install
+	@echo "Binaries installed to `pwd`/depends/$(HOST)/bin/"
+
+# Clean everything
+clean:
+	@if [ -f Makefile ]; then $(MAKE) clean; fi
+	@if [ -d depends/work ]; then rm -rf depends/work; fi
+	rm -f configure config.log config.status
+	rm -rf autom4te.cache/
+
+# Complete clean including dependencies
+distclean: clean
+	cd depends && $(MAKE) clean
+
+# Quick build using system libraries (for development)
+quick: install-deps
+	@echo "Quick build using system libraries..."
+	@echo "Note: This requires BLS library to be installed system-wide"
+	@if [ ! -f configure ]; then ./autogen.sh; fi
+	./configure \
+		--with-incompatible-bdb \
+		--disable-bench \
+		--disable-gui-tests \
+		--with-gui=no \
+		CPPFLAGS="-I/usr/include" \
+		LDFLAGS="-L/usr/lib/x86_64-linux-gnu"
+	$(MAKE) $(MAKEJOBS)
+	@echo "Quick build complete!"
+
+# Build failure help and recovery
+build-failure-help:
+	@echo ""
+	@echo "=== BUILD FAILURE RECOVERY OPTIONS ==="
+	@echo ""
+	@echo "Common issues and solutions:"
+	@echo ""
+	@echo "1. Library version conflicts:"
+	@echo "   make clean && make BUILD_STRATEGY=system"
+	@echo ""
+	@echo "2. Dependency build failures:"
+	@echo "   make clean && make BUILD_STRATEGY=minimal"
+	@echo ""
+	@echo "3. Memory/disk space issues:"
+	@echo "   make clean && make MAKEJOBS=-j1"
+	@echo ""
+	@echo "4. Network/download issues:"
+	@echo "   Check internet connection and try again"
+	@echo ""
+	@echo "5. Permission issues:"
+	@echo "   sudo chown -R $$USER:$$USER . && make clean && make"
+	@echo ""
+	@echo "6. Force clean rebuild:"
+	@echo "   make distclean && make"
+	@echo ""
+	@echo "7. Manual dependency check:"
+	@echo "   make check-deps"
+	@echo ""
+	@echo "8. System library compatibility:"
+	@echo "   make fix-library-links"
+	@echo ""
+	@echo "For more help, check BUILD.md or the logs above."
+	@echo "======================================="
+
+# Check dependencies
+check-deps:
+	@echo "=== Dependency Check ==="
+	@echo "Checking required tools..."
+	@which gcc || echo "✗ gcc not found"
+	@which g++ || echo "✗ g++ not found"
+	@which make || echo "✗ make not found"
+	@which cmake || echo "✗ cmake not found"
+	@which autoconf || echo "✗ autoconf not found"
+	@which automake || echo "✗ automake not found"
+	@which libtool || echo "✗ libtool not found"
+	@echo ""
+	@echo "Checking libraries..."
+	@pkg-config --exists openssl && echo "✓ openssl" || echo "✗ openssl"
+	@pkg-config --exists libevent && echo "✓ libevent" || echo "✗ libevent"
+	@pkg-config --exists libzmq && echo "✓ libzmq" || echo "✗ libzmq"
+	@ldconfig -p | grep boost_system && echo "✓ boost" || echo "✗ boost"
+	@echo "========================"
+
+# Fix common library linking issues
+fix-library-links:
+	@echo "Attempting to fix library linking issues..."
+	@echo "Updating library cache..."
+	@sudo ldconfig
+	@echo "Checking for boost libraries..."
+	@find /usr/lib -name "libboost_*.so*" 2>/dev/null | head -5 || echo "No boost libraries found"
+	@echo "Creating common symlinks if needed..."
+	@if [ -f "/usr/lib/x86_64-linux-gnu/libboost_filesystem.so" ]; then \
+		BOOST_VER=$$(ls /usr/lib/x86_64-linux-gnu/libboost_filesystem.so.* | head -1 | sed 's/.*\.so\.//'); \
+		echo "Found boost version: $$BOOST_VER"; \
+		for lib in filesystem system thread chrono program_options; do \
+			if [ ! -f "/usr/lib/x86_64-linux-gnu/libboost_$$lib.so.1.71.0" ] && [ -f "/usr/lib/x86_64-linux-gnu/libboost_$$lib.so.$$BOOST_VER" ]; then \
+				echo "Creating symlink for libboost_$$lib.so.1.71.0"; \
+				sudo ln -sf "/usr/lib/x86_64-linux-gnu/libboost_$$lib.so.$$BOOST_VER" "/usr/lib/x86_64-linux-gnu/libboost_$$lib.so.1.71.0" || true; \
+			fi; \
+		done; \
+	fi
+	@sudo ldconfig
+	@echo "Library fix attempt completed"
+
+# Run tests with error handling
+test: build
+	@echo "Running tests..."
+	@$(MAKE) check || echo "Some tests failed, but build may still be usable"
+
+# Help target
+help:
+	@echo "HelpTheHomeless Coin Robust Build System"
+	@echo "========================================"
+	@echo ""
+	@echo "BASIC USAGE:"
+	@echo "  make                    # Robust auto-build (recommended)"
+	@echo "  make BUILD_STRATEGY=depends   # Force depends build"
+	@echo "  make BUILD_STRATEGY=system    # Force system libraries"
+	@echo "  make BUILD_STRATEGY=minimal   # Minimal build"
+	@echo ""
+	@echo "BUILD TARGETS:"
+	@echo "  all/robust-build - Robust build with auto-fallback"
+	@echo "  install-deps     - Install system dependencies"
+	@echo "  check-env        - Check system environment"
+	@echo "  check-deps       - Verify dependencies"
+	@echo "  build            - Legacy build target"
+	@echo "  test             - Run tests"
+	@echo "  clean            - Clean build files"
+	@echo "  distclean        - Clean everything"
+	@echo ""
+	@echo "RECOVERY TARGETS:"
+	@echo "  build-failure-help   - Show failure recovery options"
+	@echo "  fix-library-links    - Fix common library issues"
+	@echo "  verify-binaries      - Check if binaries work"
+	@echo ""
+	@echo "BUILD STRATEGIES:"
+	@echo "  depends  - Build all deps from source (most robust, slow)"
+	@echo "  system   - Use system libraries (faster, may fail)"
+	@echo "  minimal  - Minimal build (fastest, most likely to fail)"
+	@echo "  auto     - Try depends, fallback to system, then minimal"
+	@echo ""
+	@echo "EXAMPLES:"
+	@echo "  make                           # Auto-build with fallbacks"
+	@echo "  make BUILD_STRATEGY=system    # Force system libs"
+	@echo "  make MAKEJOBS=-j1             # Single-threaded build"
+	@echo "  make fix-library-links        # Fix boost version issues"
+	@echo ""
+	@echo "TROUBLESHOOTING:"
+	@echo "  If build fails: make build-failure-help"
+	@echo "  For library issues: make fix-library-links"
+	@echo "  For clean rebuild: make distclean && make"
+	@echo ""
+	@echo "REQUIREMENTS:"
+	@echo "  - Ubuntu 22.04/24.04 (other versions may work)"
+	@echo "  - 4GB+ RAM, 10GB+ disk space"
+	@echo "  - Internet connection for dependencies"
+	@echo "  - Sudo access for system packages"

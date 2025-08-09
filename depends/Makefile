@@ -6,6 +6,10 @@ SDK_PATH ?= $(BASEDIR)/SDKs
 NO_QT ?=
 NO_WALLET ?=
 NO_UPNP ?=
+FALLBACK_DOWNLOAD_PATH ?= https://bitcoincore.org/depends-sources
+
+BUILD_ID_SALT ?=
+HOST_ID_SALT ?=
 
 BUILD = $(shell ./config.guess)
 HOST ?= $(BUILD)
@@ -13,8 +17,6 @@ PATCHES_PATH = $(BASEDIR)/patches
 BASEDIR = $(CURDIR)
 HASH_LENGTH:=11
 DOWNLOAD_CONNECT_TIMEOUT:=10
-HOST_ID_SALT ?= salt
-BUILD_ID_SALT ?= salt
 
 host:=$(BUILD)
 ifneq ($(HOST),)
@@ -38,21 +40,16 @@ build_vendor=$(word 2,$(subst -, ,$(build)))
 full_build_os:=$(subst $(build_arch)-$(build_vendor)-,,$(build))
 build_os:=$(findstring linux,$(full_build_os))
 build_os+=$(findstring darwin,$(full_build_os))
-build_os:=$(strip $(build_os))
-ifeq ($(build_os),)
-build_os=$(full_build_os)
-endif
+build_os+=$(findstring freebsd,$(full_build_os))
+build_os+=$(findstring mingw32,$(full_build_os))
 
 host_arch=$(firstword $(subst -, ,$(canonical_host)))
 host_vendor=$(word 2,$(subst -, ,$(canonical_host)))
 full_host_os:=$(subst $(host_arch)-$(host_vendor)-,,$(canonical_host))
 host_os:=$(findstring linux,$(full_host_os))
 host_os+=$(findstring darwin,$(full_host_os))
+host_os+=$(findstring freebsd,$(full_host_os))
 host_os+=$(findstring mingw32,$(full_host_os))
-host_os:=$(strip $(host_os))
-ifeq ($(host_os),)
-host_os=$(full_host_os)
-endif
 
 $(host_arch)_$(host_os)_prefix=$(BASEDIR)/$(host)
 $(host_arch)_$(host_os)_host=$(host)
