@@ -7,9 +7,17 @@ $(package)_sha256_hash=b3ec74a77a7b6795f84b05e051a0824ef8d9e05b04b2993f01040f356
 $(package)_dependencies=gmp
 #$(package)_patches=...TODO (when we switch back to https://github.com/Chia-Network/bls-signatures)
 
-#define $(package)_preprocess_cmds
-#  for i in $($(package)_patches); do patch -N -p1 < $($(package)_patch_dir)/$$$$i; done
-#endef
+# Work around GCC 13+ alignment errors in relic's BLAKE2 by avoiding arrays-of-1 of aligned types
+# See errors like: size of array element is not a multiple of its alignment
+# This sed-based patch is scoped narrowly to v20181101 layout
+
+define $(package)_preprocess_cmds
+  sed -i.bak 's/blake2s_state S\[8\]\[1\];/blake2s_state S[8];/' contrib/relic/src/md/blake2.h && \
+  sed -i.bak 's/blake2s_state R\[1\];/blake2s_state R;/' contrib/relic/src/md/blake2.h && \
+  sed -i.bak 's/blake2b_state S\[4\]\[1\];/blake2b_state S[4];/' contrib/relic/src/md/blake2.h && \
+  sed -i.bak 's/blake2b_state R\[1\];/blake2b_state R;/' contrib/relic/src/md/blake2.h && \
+  sed -i.bak 's/blake2s_state S\[1\];/blake2s_state S;/' contrib/relic/src/md/blake2s-ref.c
+endef
 
 define $(package)_set_vars
   $(package)_config_opts=-DCMAKE_INSTALL_PREFIX=$($(package)_staging_dir)/$(host_prefix)
