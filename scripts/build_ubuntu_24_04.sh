@@ -43,8 +43,20 @@ pushd "$TMPDIR"
 curl -L -o v20181101.zip https://github.com/codablock/bls-signatures/archive/v20181101.zip
 unzip -q v20181101.zip
 cd bls-signatures-20181101
-cmake -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" .
-sudo make -j"$CORES" install
+cmake -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
+      -DSTLIB=ON -DSHLIB=OFF -DSTBIN=OFF \
+      -DBUILD_TESTS=OFF -DBUILD_BENCHMARKS=OFF -DBENCHMARK=OFF -DTESTS=OFF \
+      .
+# Build only the library and then manually install headers and static lib (avoid CMake install targets that build tests)
+cmake --build . --target chiabls -- -j"$CORES"
+# Locate library
+LIB_PATH="libchiabls.a"
+if [ ! -f "$LIB_PATH" ] && [ -f "src/libchiabls.a" ]; then
+  LIB_PATH="src/libchiabls.a"
+fi
+sudo install -Dm644 "$LIB_PATH" /usr/local/lib/libchiabls.a
+sudo mkdir -p /usr/local/include/chiabls
+sudo cp -a src/*.hpp /usr/local/include/chiabls/
 sudo ldconfig
 popd
 rm -rf "$TMPDIR"
@@ -54,6 +66,10 @@ if [ ! -d helpthehomelesscoin ]; then
   git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" helpthehomelesscoin
 fi
 cd helpthehomelesscoin
+
+# Normalize potential CRLF line endings in depends to avoid GNU make parse errors
+find depends -type f \( -name "*.mk" -o -name "Makefile" -o -name "*.m4" \) -print0 | \
+  xargs -0 -I{} sed -i 's/\r$//' {}
 
 # 4) Build depends (uses updated Boost/BDB in repo)
 pushd depends
