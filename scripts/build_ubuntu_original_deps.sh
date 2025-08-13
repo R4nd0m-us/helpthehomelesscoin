@@ -365,6 +365,22 @@ echo "BLS v20181101 build completed successfully"
 popd
 rm -rf "$TMPDIR"
 
+# 10.5) Create arc4random_addrandom stub for Linux compatibility
+echo "Creating arc4random_addrandom stub..."
+cat > "$BUILD_PREFIX/lib/arc4random_stub.c" << 'EOF'
+/* Stub for arc4random_addrandom - not available on Linux */
+void arc4random_addrandom(unsigned char *dat, int datlen) {
+    /* This function doesn't exist on Linux and isn't needed for security */
+    /* Modern arc4random implementations don't need manual seeding */
+    (void)dat;
+    (void)datlen;
+}
+EOF
+
+# Compile the stub into a static library
+gcc-7 -c "$BUILD_PREFIX/lib/arc4random_stub.c" -o "$BUILD_PREFIX/lib/arc4random_stub.o"
+ar rcs "$BUILD_PREFIX/lib/libarc4random_stub.a" "$BUILD_PREFIX/lib/arc4random_stub.o"
+
 # 11) Clone and build the project
 echo "Cloning and building HelpTheHomeless..."
 if [ ! -d helpthehomelesscoin ]; then
@@ -382,7 +398,7 @@ cd helpthehomelesscoin
   CC="$CC" CXX="$CXX" \
   CPPFLAGS="-I$BUILD_PREFIX/include" \
   LDFLAGS="-L$BUILD_PREFIX/lib -static -static-libgcc -static-libstdc++" \
-  LIBS="-lpthread -lrt -ldl -lm" \
+  LIBS="-larc4random_stub -lpthread -lrt -ldl -lm" \
   BOOST_ROOT="$BUILD_PREFIX" \
   BDB_CFLAGS="-I$BUILD_PREFIX/include" \
   BDB_LIBS="-L$BUILD_PREFIX/lib -ldb_cxx-4.8"
