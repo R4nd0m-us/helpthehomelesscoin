@@ -174,9 +174,15 @@ pushd "$TMPDIR"
 curl -L -o libevent-2.1.8-stable.tar.gz https://github.com/libevent/libevent/releases/download/release-2.1.8-stable/libevent-2.1.8-stable.tar.gz
 tar xf libevent-2.1.8-stable.tar.gz
 cd libevent-2.1.8-stable
-./configure --prefix="$BUILD_PREFIX" --disable-shared --with-pic --disable-samples
-make -j"$CORES"
-make install
+./configure --prefix="$BUILD_PREFIX" --disable-shared --with-pic --disable-samples --disable-libevent-regress
+make -j"$CORES" 2>&1 | tee build.log
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  handle_build_error "libevent" "build" ${PIPESTATUS[0]}
+fi
+make install 2>&1 | tee -a build.log
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  handle_build_error "libevent" "install" ${PIPESTATUS[0]}
+fi
 popd
 rm -rf "$TMPDIR"
 
