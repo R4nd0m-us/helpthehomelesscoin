@@ -1,9 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Parse command line arguments
+FULL_BUILD=false
+if [[ "${1:-}" == "--full-build" ]]; then
+    FULL_BUILD=true
+    echo "Full rebuild requested - will rebuild all dependencies"
+fi
+
 # Set up logging directory where script was launched from
 SCRIPT_DIR="$(pwd)"
 BUILD_LOG="$SCRIPT_DIR/build.log"
+
+# Function to check if a dependency is already built
+check_dependency() {
+    local dep_name="$1"
+    local check_file="$2"
+
+    if [[ "$FULL_BUILD" == "true" ]]; then
+        return 1  # Force rebuild
+    fi
+
+    if [[ -f "$check_file" ]]; then
+        echo "$dep_name already built (found $check_file) - skipping"
+        return 0  # Skip build
+    else
+        echo "$dep_name not found - building"
+        return 1  # Need to build
+    fi
+}
 
 # Function to handle build failures with detailed error reporting
 handle_build_error() {
@@ -93,67 +118,81 @@ export LDFLAGS="-L$BUILD_PREFIX/lib ${LDFLAGS:-}"
 export PATH="$BUILD_PREFIX/bin:$PATH"
 
 # 3) Build GMP 6.1.2 (required for BLS)
-echo "Building GMP 6.1.2..."
-TMPDIR="$(mktemp -d)"
-pushd "$TMPDIR"
-curl -L -o gmp-6.1.2.tar.bz2 https://gmplib.org/download/gmp/gmp-6.1.2.tar.bz2
-tar xf gmp-6.1.2.tar.bz2
-cd gmp-6.1.2
-./configure --prefix="$BUILD_PREFIX" --enable-cxx --enable-fat --with-pic --disable-shared
-make -j"$CORES"
-make install
-popd
-rm -rf "$TMPDIR"
+if check_dependency "GMP 6.1.2" "$BUILD_PREFIX/lib/libgmp.a"; then
+    echo "Skipping GMP build"
+else
+    echo "Building GMP 6.1.2..."
+    TMPDIR="$(mktemp -d)"
+    pushd "$TMPDIR"
+    curl -L -o gmp-6.1.2.tar.bz2 https://gmplib.org/download/gmp/gmp-6.1.2.tar.bz2
+    tar xf gmp-6.1.2.tar.bz2
+    cd gmp-6.1.2
+    ./configure --prefix="$BUILD_PREFIX" --enable-cxx --enable-fat --with-pic --disable-shared
+    make -j"$CORES"
+    make install
+    popd
+    rm -rf "$TMPDIR"
+    echo "GMP 6.1.2 build completed successfully"
+fi
 
 # 4) Build OpenSSL 1.0.1k (required for Qt)
-echo "Building OpenSSL 1.0.1k..."
-TMPDIR="$(mktemp -d)"
-pushd "$TMPDIR"
-# OpenSSL 1.0.1k from GitHub releases (only remaining source)
-curl -L -o openssl-1.0.1k.tar.gz https://github.com/openssl/openssl/releases/download/OpenSSL_1_0_1k/openssl-1.0.1k.tar.gz
-tar xf openssl-1.0.1k.tar.gz
-# Handle different archive structures
-if [ -d openssl-1.0.1k ]; then
-  cd openssl-1.0.1k
-elif [ -d openssl-OpenSSL_1_0_1k ]; then
-  cd openssl-OpenSSL_1_0_1k
+if check_dependency "OpenSSL 1.0.1k" "$BUILD_PREFIX/lib/libssl.a"; then
+    echo "Skipping OpenSSL build"
 else
-  cd openssl-*
+    echo "Building OpenSSL 1.0.1k..."
+    TMPDIR="$(mktemp -d)"
+    pushd "$TMPDIR"
+    # OpenSSL 1.0.1k from GitHub releases (only remaining source)
+    curl -L -o openssl-1.0.1k.tar.gz https://github.com/openssl/openssl/releases/download/OpenSSL_1_0_1k/openssl-1.0.1k.tar.gz
+    tar xf openssl-1.0.1k.tar.gz
+    # Handle different archive structures
+    if [ -d openssl-1.0.1k ]; then
+      cd openssl-1.0.1k
+    elif [ -d openssl-OpenSSL_1_0_1k ]; then
+      cd openssl-OpenSSL_1_0_1k
+    else
+      cd openssl-*
+    fi
+    ./config --prefix="$BUILD_PREFIX" --openssldir="$BUILD_PREFIX/etc/openssl" \
+      no-camellia no-capieng no-cast no-cms no-dtls1 no-gost no-gmp no-heartbeats \
+      no-idea no-jpake no-krb5 no-md2 no-mdc2 no-rc5 no-rdrand no-rfc3779 no-rsax \
+      no-sctp no-seed no-sha0 no-static_engine no-whirlpool no-rc2 no-rc4 no-ssl2 no-ssl3
+    make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "OpenSSL" "build" ${PIPESTATUS[0]}
+    fi
+    make install 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "OpenSSL" "install" ${PIPESTATUS[0]}
+    fi
+    echo "OpenSSL 1.0.1k build completed successfully"
+    popd
+    rm -rf "$TMPDIR"
 fi
-./config --prefix="$BUILD_PREFIX" --openssldir="$BUILD_PREFIX/etc/openssl" \
-  no-camellia no-capieng no-cast no-cms no-dtls1 no-gost no-gmp no-heartbeats \
-  no-idea no-jpake no-krb5 no-md2 no-mdc2 no-rc5 no-rdrand no-rfc3779 no-rsax \
-  no-sctp no-seed no-sha0 no-static_engine no-whirlpool no-rc2 no-rc4 no-ssl2 no-ssl3
-make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
-if [ ${PIPESTATUS[0]} -ne 0 ]; then
-  handle_build_error "OpenSSL" "build" ${PIPESTATUS[0]}
-fi
-make install 2>&1 | tee -a "$BUILD_LOG"
-if [ ${PIPESTATUS[0]} -ne 0 ]; then
-  handle_build_error "OpenSSL" "install" ${PIPESTATUS[0]}
-fi
-echo "OpenSSL 1.0.1k build completed successfully"
-popd
-rm -rf "$TMPDIR"
 
 # 5) Build zlib (required for Qt)
-echo "Building zlib..."
-TMPDIR="$(mktemp -d)"
-pushd "$TMPDIR"
-curl -L -o zlib-1.2.11.tar.gz https://zlib.net/fossils/zlib-1.2.11.tar.gz
-tar xf zlib-1.2.11.tar.gz
-cd zlib-1.2.11
-./configure --prefix="$BUILD_PREFIX" --static
-make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
-if [ ${PIPESTATUS[0]} -ne 0 ]; then
-  handle_build_error "zlib" "build" ${PIPESTATUS[0]}
+if check_dependency "zlib" "$BUILD_PREFIX/lib/libz.a"; then
+    echo "Skipping zlib build"
+else
+    echo "Building zlib..."
+    TMPDIR="$(mktemp -d)"
+    pushd "$TMPDIR"
+    curl -L -o zlib-1.2.11.tar.gz https://zlib.net/fossils/zlib-1.2.11.tar.gz
+    tar xf zlib-1.2.11.tar.gz
+    cd zlib-1.2.11
+    ./configure --prefix="$BUILD_PREFIX" --static
+    make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "zlib" "build" ${PIPESTATUS[0]}
+    fi
+    make install 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "zlib" "install" ${PIPESTATUS[0]}
+    fi
+    echo "zlib build completed successfully"
+    popd
+    rm -rf "$TMPDIR"
 fi
-make install 2>&1 | tee -a "$BUILD_LOG"
-if [ ${PIPESTATUS[0]} -ne 0 ]; then
-  handle_build_error "zlib" "install" ${PIPESTATUS[0]}
-fi
-popd
-rm -rf "$TMPDIR"
 
 # 6) Build Berkeley DB 4.8.30
 echo "Building Berkeley DB 4.8.30..."
@@ -178,40 +217,99 @@ popd
 rm -rf "$TMPDIR"
 
 # 7) Build libevent 2.1.8
-echo "Building libevent 2.1.8..."
-TMPDIR="$(mktemp -d)"
-pushd "$TMPDIR"
-curl -L -o libevent-2.1.8-stable.tar.gz https://github.com/libevent/libevent/releases/download/release-2.1.8-stable/libevent-2.1.8-stable.tar.gz
-tar xf libevent-2.1.8-stable.tar.gz
-cd libevent-2.1.8-stable
-# Fix arc4random_addrandom issue on Linux by replacing the BSD-specific call
-sed -i 's/arc4random_addrandom/arc4random_buf/g' evutil_rand.c
-# Also disable the problematic function call entirely if it exists
-sed -i 's/arc4random_addrandom.*;//g' evutil_rand.c
-./configure --prefix="$BUILD_PREFIX" --disable-shared --with-pic --disable-samples --disable-libevent-regress --disable-openssl
-make -j"$CORES" 2>&1 | tee build.log
-if [ ${PIPESTATUS[0]} -ne 0 ]; then
-  handle_build_error "libevent" "build" ${PIPESTATUS[0]}
+if check_dependency "libevent 2.1.8" "$BUILD_PREFIX/lib/libevent.a"; then
+    echo "Skipping libevent build"
+else
+    echo "Building libevent 2.1.8..."
+    TMPDIR="$(mktemp -d)"
+    pushd "$TMPDIR"
+    curl -L -o libevent-2.1.8-stable.tar.gz https://github.com/libevent/libevent/releases/download/release-2.1.8-stable/libevent-2.1.8-stable.tar.gz
+    tar xf libevent-2.1.8-stable.tar.gz
+    cd libevent-2.1.8-stable
+
+    # Comprehensive fix for arc4random_addrandom issue on Linux
+    echo "Patching libevent for Linux compatibility..."
+
+    # Create a proper patch for the arc4random issue
+    cat > arc4random_fix.patch << 'EOF'
+--- a/evutil_rand.c
++++ b/evutil_rand.c
+@@ -195,7 +195,9 @@ evutil_secure_rng_add_bytes(const char *dat, size_t datlen)
+ {
+ 	ev_arc4random_addrandom(dat, datlen);
+ #else
++#ifndef __linux__
+ 	arc4random_addrandom((unsigned char*)dat, datlen);
++#endif
+ #endif
+ }
+
+EOF
+
+    # Apply the patch
+    patch -p1 < arc4random_fix.patch
+
+    ./configure --prefix="$BUILD_PREFIX" --disable-shared --with-pic --disable-samples --disable-libevent-regress --disable-openssl
+    make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "libevent" "build" ${PIPESTATUS[0]}
+    fi
+    make install 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "libevent" "install" ${PIPESTATUS[0]}
+    fi
+    echo "libevent 2.1.8 build completed successfully"
+    popd
+    rm -rf "$TMPDIR"
 fi
-make install 2>&1 | tee -a build.log
-if [ ${PIPESTATUS[0]} -ne 0 ]; then
-  handle_build_error "libevent" "install" ${PIPESTATUS[0]}
-fi
-popd
-rm -rf "$TMPDIR"
 
 # 8) Build ZeroMQ 4.1.5
-echo "Building ZeroMQ 4.1.5..."
-TMPDIR="$(mktemp -d)"
-pushd "$TMPDIR"
-curl -L -o zeromq-4.1.5.tar.gz https://github.com/zeromq/zeromq4-1/releases/download/v4.1.5/zeromq-4.1.5.tar.gz
-tar xf zeromq-4.1.5.tar.gz
-cd zeromq-4.1.5
-./configure --prefix="$BUILD_PREFIX" --without-documentation --disable-shared --without-libsodium --disable-curve --with-pic
-make -j"$CORES"
-make install
-popd
-rm -rf "$TMPDIR"
+if check_dependency "ZeroMQ 4.1.5" "$BUILD_PREFIX/lib/libzmq.a"; then
+    echo "Skipping ZeroMQ build"
+else
+    echo "Building ZeroMQ 4.1.5..."
+    TMPDIR="$(mktemp -d)"
+    pushd "$TMPDIR"
+    curl -L -o zeromq-4.1.5.tar.gz https://github.com/zeromq/zeromq4-1/releases/download/v4.1.5/zeromq-4.1.5.tar.gz
+    tar xf zeromq-4.1.5.tar.gz
+    cd zeromq-4.1.5
+    ./configure --prefix="$BUILD_PREFIX" --without-documentation --disable-shared --without-libsodium --disable-curve --with-pic
+    make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "ZeroMQ" "build" ${PIPESTATUS[0]}
+    fi
+    make install 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "ZeroMQ" "install" ${PIPESTATUS[0]}
+    fi
+    echo "ZeroMQ 4.1.5 build completed successfully"
+    popd
+    rm -rf "$TMPDIR"
+fi
+
+# 8.5) Build miniupnpc (for UPnP support)
+if check_dependency "miniupnpc" "$BUILD_PREFIX/lib/libminiupnpc.a"; then
+    echo "Skipping miniupnpc build"
+else
+    echo "Building miniupnpc..."
+    TMPDIR="$(mktemp -d)"
+    pushd "$TMPDIR"
+    # Use version that matches the original depends
+    curl -L -o miniupnpc-2.0.tar.gz http://miniupnp.free.fr/files/download.php?file=miniupnpc-2.0.tar.gz
+    tar xf miniupnpc-2.0.tar.gz
+    cd miniupnpc-2.0
+    make -j"$CORES" CC="$CC" libminiupnpc.a 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "miniupnpc" "build" ${PIPESTATUS[0]}
+    fi
+    # Manual install
+    install -Dm644 libminiupnpc.a "$BUILD_PREFIX/lib/libminiupnpc.a"
+    mkdir -p "$BUILD_PREFIX/include/miniupnpc"
+    cp -a *.h "$BUILD_PREFIX/include/miniupnpc/"
+    echo "miniupnpc build completed successfully"
+    popd
+    rm -rf "$TMPDIR"
+fi
 
 # 9) Build Boost 1.63.0 (original version, no modifications)
 echo "Building Boost 1.63.0..."
