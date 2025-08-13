@@ -225,11 +225,25 @@ cmake -DCMAKE_INSTALL_PREFIX="$BUILD_PREFIX" -DCMAKE_PREFIX_PATH="$BUILD_PREFIX"
       -DSTLIB=ON -DSHLIB=OFF -DSTBIN=OFF \
       -DBUILD_TESTS=OFF -DBUILD_BENCHMARKS=OFF -DBENCHMARK=OFF -DTESTS=OFF \
       -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" .
-cmake --build . --target chiabls -- -j"$CORES"
-# Manual install to avoid test dependencies
+cmake --build . --target chiabls -- -j"$CORES" 2>&1 | tee build.log
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  handle_build_error "BLS" "build" ${PIPESTATUS[0]}
+fi
+
+# Manual install with complete headers (including relic headers)
+echo "Installing BLS library and headers..."
 install -Dm644 libchiabls.a "$BUILD_PREFIX/lib/libchiabls.a"
 mkdir -p "$BUILD_PREFIX/include/chiabls"
 cp -a src/*.hpp "$BUILD_PREFIX/include/chiabls/"
+
+# Install relic headers that BLS depends on
+mkdir -p "$BUILD_PREFIX/include/relic"
+find contrib/relic -name "*.h" -exec cp {} "$BUILD_PREFIX/include/" \;
+# Also copy any generated relic config headers from build directory
+find . -name "relic_conf.h" -exec cp {} "$BUILD_PREFIX/include/" \;
+find . -name "relic_*.h" -exec cp {} "$BUILD_PREFIX/include/" \;
+
+echo "BLS v20181101 build completed successfully"
 popd
 rm -rf "$TMPDIR"
 
@@ -249,12 +263,18 @@ cd helpthehomelesscoin
   --with-incompatible-bdb \
   CC="$CC" CXX="$CXX" \
   CPPFLAGS="-I$BUILD_PREFIX/include" \
-  LDFLAGS="-L$BUILD_PREFIX/lib" \
+  LDFLAGS="-L$BUILD_PREFIX/lib -static -static-libgcc -static-libstdc++" \
   BOOST_ROOT="$BUILD_PREFIX" \
   BDB_CFLAGS="-I$BUILD_PREFIX/include" \
   BDB_LIBS="-L$BUILD_PREFIX/lib -ldb_cxx-4.8"
 
-make -j"$CORES"
+make -j"$CORES" 2>&1 | tee build.log
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  handle_build_error "HelpTheHomeless" "build" ${PIPESTATUS[0]}
+fi
+
+echo "Verifying static linkage..."
+ldd src/helpthehomelessd || echo "SUCCESS: Binary is fully static"
 
 echo "Build complete! Binaries are in src/"
 echo "All dependencies built in: $BUILD_PREFIX"
