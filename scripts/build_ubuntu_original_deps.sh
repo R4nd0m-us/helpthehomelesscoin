@@ -227,29 +227,8 @@ else
     tar xf libevent-2.1.8-stable.tar.gz
     cd libevent-2.1.8-stable
 
-    # Comprehensive fix for arc4random_addrandom issue on Linux
-    echo "Patching libevent for Linux compatibility..."
-
-    # Create a proper patch for the arc4random issue
-    cat > arc4random_fix.patch << 'EOF'
---- a/evutil_rand.c
-+++ b/evutil_rand.c
-@@ -195,7 +195,9 @@ evutil_secure_rng_add_bytes(const char *dat, size_t datlen)
- {
- 	ev_arc4random_addrandom(dat, datlen);
- #else
-+#ifndef __linux__
- 	arc4random_addrandom((unsigned char*)dat, datlen);
-+#endif
- #endif
- }
-
-EOF
-
-    # Apply the patch
-    patch -p1 < arc4random_fix.patch
-
-    ./configure --prefix="$BUILD_PREFIX" --disable-shared --with-pic --disable-samples --disable-libevent-regress --disable-openssl
+    ./configure --prefix="$BUILD_PREFIX" --disable-shared --with-pic --disable-samples --disable-libevent-regress \
+                --enable-openssl --with-openssl-dir="$BUILD_PREFIX"
     make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
     if [ ${PIPESTATUS[0]} -ne 0 ]; then
       handle_build_error "libevent" "build" ${PIPESTATUS[0]}
