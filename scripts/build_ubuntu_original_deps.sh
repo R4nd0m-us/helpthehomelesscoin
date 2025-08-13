@@ -8,7 +8,7 @@ set -euo pipefail
 # - Builds everything from scratch without modifying the original source
 
 REPO_URL="https://github.com/R4nd0m-us/helpthehomelesscoin"
-REPO_BRANCH="24.04"
+REPO_BRANCH="new"
 CORES="$(nproc || echo 2)"
 BUILD_PREFIX="/opt/helpthehomeless-deps"
 
@@ -20,11 +20,24 @@ sudo apt-get install -y \
   build-essential autoconf automake libtool pkg-config git curl unzip cmake \
   python3 bsdmainutils software-properties-common
 
-# Install GCC 7 (last version that builds old Boost/Qt cleanly)
+# Install GCC 7 from archived sources (exact version that built original dependencies)
 if ! command -v gcc-7 >/dev/null 2>&1; then
-  sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+  echo "Installing GCC 7 from archived packages..."
+
+  # Add Ubuntu 18.04 (bionic) sources for GCC 7
+  echo "deb http://archive.ubuntu.com/ubuntu bionic main universe" | sudo tee /etc/apt/sources.list.d/bionic.list
+  echo "deb http://archive.ubuntu.com/ubuntu bionic-updates main universe" | sudo tee -a /etc/apt/sources.list.d/bionic.list
+
+  # Add GPG key for bionic
+  sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 3B4FE6ACC0B21F32
+
+  # Update and install GCC 7 with specific version pinning
   sudo apt-get update
-  sudo apt-get install -y gcc-7 g++-7
+  sudo apt-get install -y gcc-7 g++-7 gcc-7-base cpp-7 libgcc-7-dev libstdc++-7-dev
+
+  # Clean up bionic sources to avoid conflicts
+  sudo rm -f /etc/apt/sources.list.d/bionic.list
+  sudo apt-get update
 fi
 
 export CC=gcc-7
@@ -127,7 +140,7 @@ make install
 popd
 rm -rf "$TMPDIR"
 
-# 9) Build Boost 1.63.0
+# 9) Build Boost 1.63.0 (original version, no modifications)
 echo "Building Boost 1.63.0..."
 TMPDIR="$(mktemp -d)"
 pushd "$TMPDIR"
@@ -142,7 +155,7 @@ echo "using gcc : : $CXX : <cxxflags>\"-std=c++11 -fvisibility=hidden -fPIC\" ;"
 popd
 rm -rf "$TMPDIR"
 
-# 10) Build BLS v20181101
+# 10) Build BLS v20181101 (original version, no modifications)
 echo "Building BLS v20181101..."
 TMPDIR="$(mktemp -d)"
 pushd "$TMPDIR"
