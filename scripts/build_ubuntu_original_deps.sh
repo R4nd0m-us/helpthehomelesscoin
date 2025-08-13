@@ -216,20 +216,45 @@ fi
 popd
 rm -rf "$TMPDIR"
 
-# 7) Build libevent 2.1.8
+# 6.5) Build libbsd (BSD compatibility library for static linking)
+if check_dependency "libbsd" "$BUILD_PREFIX/lib/libbsd.a"; then
+    echo "Skipping libbsd build"
+else
+    echo "Building libbsd..."
+    TMPDIR="$(mktemp -d)"
+    pushd "$TMPDIR"
+    # Use a stable version of libbsd
+    curl -L -o libbsd-0.11.3.tar.xz https://libbsd.freedesktop.org/releases/libbsd-0.11.3.tar.xz
+    tar xf libbsd-0.11.3.tar.xz
+    cd libbsd-0.11.3
+    ./configure --prefix="$BUILD_PREFIX" --disable-shared --enable-static --with-pic
+    make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "libbsd" "build" ${PIPESTATUS[0]}
+    fi
+    make install 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "libbsd" "install" ${PIPESTATUS[0]}
+    fi
+    echo "libbsd build completed successfully"
+    popd
+    rm -rf "$TMPDIR"
+fi
+
+# 7) Build libevent 2.1.8 (with BSD compatibility)
 if check_dependency "libevent 2.1.8" "$BUILD_PREFIX/lib/libevent.a"; then
     echo "Skipping libevent build"
 else
-    echo "Building libevent 2.1.8..."
+    echo "Building libevent 2.1.8 with BSD compatibility..."
     TMPDIR="$(mktemp -d)"
     pushd "$TMPDIR"
     curl -L -o libevent-2.1.8-stable.tar.gz https://github.com/libevent/libevent/releases/download/release-2.1.8-stable/libevent-2.1.8-stable.tar.gz
     tar xf libevent-2.1.8-stable.tar.gz
     cd libevent-2.1.8-stable
 
-    # Fix the arc4random_addrandom issue properly
-    sed -i 's/arc4random_addrandom.*;//g' evutil_rand.c
-
+    # Configure with static BSD library support for arc4random functions
+    export PKG_CONFIG_PATH="$BUILD_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH"
+    CPPFLAGS="-I$BUILD_PREFIX/include" LDFLAGS="-L$BUILD_PREFIX/lib" LIBS="-lbsd" \
     ./configure --prefix="$BUILD_PREFIX" --disable-shared --with-pic --disable-samples --disable-libevent-regress \
                 --disable-openssl
     make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
@@ -382,6 +407,7 @@ cd helpthehomelesscoin
   CC="$CC" CXX="$CXX" \
   CPPFLAGS="-I$BUILD_PREFIX/include" \
   LDFLAGS="-L$BUILD_PREFIX/lib -static -static-libgcc -static-libstdc++" \
+  LIBS="-lbsd -lpthread -lrt -ldl -lm" \
   BOOST_ROOT="$BUILD_PREFIX" \
   BDB_CFLAGS="-I$BUILD_PREFIX/include" \
   BDB_LIBS="-L$BUILD_PREFIX/lib -ldb_cxx-4.8"
