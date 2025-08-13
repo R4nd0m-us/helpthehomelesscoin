@@ -73,9 +73,18 @@ rm -rf "$TMPDIR"
 echo "Building OpenSSL 1.0.1k..."
 TMPDIR="$(mktemp -d)"
 pushd "$TMPDIR"
-curl -L -o openssl-1.0.1k.tar.gz https://www.openssl.org/source/openssl-1.0.1k.tar.gz
+# OpenSSL 1.0.1k is no longer available from main site, use archive
+curl -L -o openssl-1.0.1k.tar.gz https://ftp.openssl.org/source/old/1.0.1/openssl-1.0.1k.tar.gz || \
+curl -L -o openssl-1.0.1k.tar.gz https://github.com/openssl/openssl/archive/OpenSSL_1_0_1k.tar.gz
 tar xf openssl-1.0.1k.tar.gz
-cd openssl-1.0.1k
+# Handle different archive structures
+if [ -d openssl-1.0.1k ]; then
+  cd openssl-1.0.1k
+elif [ -d openssl-OpenSSL_1_0_1k ]; then
+  cd openssl-OpenSSL_1_0_1k
+else
+  cd openssl-*
+fi
 ./config --prefix="$BUILD_PREFIX" --openssldir="$BUILD_PREFIX/etc/openssl" \
   no-camellia no-capieng no-cast no-cms no-dtls1 no-gost no-gmp no-heartbeats \
   no-idea no-jpake no-krb5 no-md2 no-mdc2 no-rc5 no-rdrand no-rfc3779 no-rsax \
