@@ -73,9 +73,8 @@ rm -rf "$TMPDIR"
 echo "Building OpenSSL 1.0.1k..."
 TMPDIR="$(mktemp -d)"
 pushd "$TMPDIR"
-# OpenSSL 1.0.1k is no longer available from main site, use archive
-curl -L -o openssl-1.0.1k.tar.gz https://ftp.openssl.org/source/old/1.0.1/openssl-1.0.1k.tar.gz || \
-curl -L -o openssl-1.0.1k.tar.gz https://github.com/openssl/openssl/archive/OpenSSL_1_0_1k.tar.gz
+# OpenSSL 1.0.1k from GitHub releases (only remaining source)
+curl -L -o openssl-1.0.1k.tar.gz https://github.com/openssl/openssl/releases/download/OpenSSL_1_0_1k/openssl-1.0.1k.tar.gz
 tar xf openssl-1.0.1k.tar.gz
 # Handle different archive structures
 if [ -d openssl-1.0.1k ]; then
