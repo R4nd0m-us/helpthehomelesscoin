@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Set up logging directory where script was launched from
+SCRIPT_DIR="$(pwd)"
+BUILD_LOG="$SCRIPT_DIR/build.log"
+
 # Function to handle build failures with detailed error reporting
 handle_build_error() {
     local component="$1"
@@ -13,7 +17,7 @@ handle_build_error() {
     echo "Working directory: $(pwd)"
     echo "Last 50 lines of output:"
     echo "----------------------------------------------"
-    tail -50 build.log 2>/dev/null || echo "No build.log found"
+    tail -50 "$BUILD_LOG" 2>/dev/null || echo "No build.log found at $BUILD_LOG"
     echo "----------------------------------------------"
     echo "Environment variables:"
     echo "CC=$CC"
@@ -22,6 +26,7 @@ handle_build_error() {
     echo "LDFLAGS=$LDFLAGS"
     echo "PATH=$PATH"
     echo "=============================================="
+    echo "Full build log saved at: $BUILD_LOG"
     exit $exit_code
 }
 
@@ -39,6 +44,11 @@ CORES="$(( TOTAL_CORES / 4 ))"
 BUILD_PREFIX="/opt/helpthehomeless-deps"
 
 echo "Building HelpTheHomeless with original dependency versions on Ubuntu $(lsb_release -rs)"
+echo "Build log will be saved to: $BUILD_LOG"
+echo "Starting build at $(date)"
+echo "========================================" > "$BUILD_LOG"
+echo "HelpTheHomeless Build Log - $(date)" >> "$BUILD_LOG"
+echo "========================================" >> "$BUILD_LOG"
 
 # 1) Install build prerequisites and GCC 7 (compatible with old dependencies)
 sudo apt-get update
@@ -114,11 +124,11 @@ fi
   no-camellia no-capieng no-cast no-cms no-dtls1 no-gost no-gmp no-heartbeats \
   no-idea no-jpake no-krb5 no-md2 no-mdc2 no-rc5 no-rdrand no-rfc3779 no-rsax \
   no-sctp no-seed no-sha0 no-static_engine no-whirlpool no-rc2 no-rc4 no-ssl2 no-ssl3
-make -j"$CORES" 2>&1 | tee build.log
+make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
   handle_build_error "OpenSSL" "build" ${PIPESTATUS[0]}
 fi
-make install 2>&1 | tee -a build.log
+make install 2>&1 | tee -a "$BUILD_LOG"
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
   handle_build_error "OpenSSL" "install" ${PIPESTATUS[0]}
 fi
@@ -134,11 +144,11 @@ curl -L -o zlib-1.2.11.tar.gz https://zlib.net/fossils/zlib-1.2.11.tar.gz
 tar xf zlib-1.2.11.tar.gz
 cd zlib-1.2.11
 ./configure --prefix="$BUILD_PREFIX" --static
-make -j"$CORES" 2>&1 | tee build.log
+make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
   handle_build_error "zlib" "build" ${PIPESTATUS[0]}
 fi
-make install 2>&1 | tee -a build.log
+make install 2>&1 | tee -a "$BUILD_LOG"
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
   handle_build_error "zlib" "install" ${PIPESTATUS[0]}
 fi
@@ -174,7 +184,11 @@ pushd "$TMPDIR"
 curl -L -o libevent-2.1.8-stable.tar.gz https://github.com/libevent/libevent/releases/download/release-2.1.8-stable/libevent-2.1.8-stable.tar.gz
 tar xf libevent-2.1.8-stable.tar.gz
 cd libevent-2.1.8-stable
-./configure --prefix="$BUILD_PREFIX" --disable-shared --with-pic --disable-samples --disable-libevent-regress
+# Fix arc4random_addrandom issue on Linux by replacing the BSD-specific call
+sed -i 's/arc4random_addrandom/arc4random_buf/g' evutil_rand.c
+# Also disable the problematic function call entirely if it exists
+sed -i 's/arc4random_addrandom.*;//g' evutil_rand.c
+./configure --prefix="$BUILD_PREFIX" --disable-shared --with-pic --disable-samples --disable-libevent-regress --disable-openssl
 make -j"$CORES" 2>&1 | tee build.log
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
   handle_build_error "libevent" "build" ${PIPESTATUS[0]}
