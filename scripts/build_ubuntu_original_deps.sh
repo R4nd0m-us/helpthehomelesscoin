@@ -227,8 +227,11 @@ else
     tar xf libevent-2.1.8-stable.tar.gz
     cd libevent-2.1.8-stable
 
+    # Fix the arc4random_addrandom issue properly
+    sed -i 's/arc4random_addrandom.*;//g' evutil_rand.c
+
     ./configure --prefix="$BUILD_PREFIX" --disable-shared --with-pic --disable-samples --disable-libevent-regress \
-                --enable-openssl --with-openssl-dir="$BUILD_PREFIX"
+                --disable-openssl
     make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
     if [ ${PIPESTATUS[0]} -ne 0 ]; then
       handle_build_error "libevent" "build" ${PIPESTATUS[0]}
@@ -262,6 +265,30 @@ else
       handle_build_error "ZeroMQ" "install" ${PIPESTATUS[0]}
     fi
     echo "ZeroMQ 4.1.5 build completed successfully"
+    popd
+    rm -rf "$TMPDIR"
+fi
+
+# 7.5) Build backtrace library
+if check_dependency "backtrace" "$BUILD_PREFIX/lib/libbacktrace.a"; then
+    echo "Skipping backtrace build"
+else
+    echo "Building backtrace library..."
+    TMPDIR="$(mktemp -d)"
+    pushd "$TMPDIR"
+    # Use libbacktrace from GCC
+    git clone https://github.com/ianlancetaylor/libbacktrace.git
+    cd libbacktrace
+    ./configure --prefix="$BUILD_PREFIX" --disable-shared --with-pic
+    make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "backtrace" "build" ${PIPESTATUS[0]}
+    fi
+    make install 2>&1 | tee -a "$BUILD_LOG"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+      handle_build_error "backtrace" "install" ${PIPESTATUS[0]}
+    fi
+    echo "backtrace library build completed successfully"
     popd
     rm -rf "$TMPDIR"
 fi
