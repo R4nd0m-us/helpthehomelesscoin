@@ -1,6 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Function to handle build failures with detailed error reporting
+handle_build_error() {
+    local component="$1"
+    local step="$2"
+    local exit_code="$3"
+
+    echo "=============================================="
+    echo "ERROR: $component $step FAILED (exit code: $exit_code)"
+    echo "=============================================="
+    echo "Working directory: $(pwd)"
+    echo "Last 50 lines of output:"
+    echo "----------------------------------------------"
+    tail -50 build.log 2>/dev/null || echo "No build.log found"
+    echo "----------------------------------------------"
+    echo "Environment variables:"
+    echo "CC=$CC"
+    echo "CXX=$CXX"
+    echo "CPPFLAGS=$CPPFLAGS"
+    echo "LDFLAGS=$LDFLAGS"
+    echo "PATH=$PATH"
+    echo "=============================================="
+    exit $exit_code
+}
+
 # Build HelpTheHomeless on Ubuntu 22.04/24.04 using original dependency versions
 # This script builds all dependencies from source to match the original codebase exactly:
 # - Boost 1.63.0, Qt 5.7.1, OpenSSL 1.0.1k, Berkeley DB 4.8.30, BLS v20181101, etc.
@@ -9,7 +33,9 @@ set -euo pipefail
 
 REPO_URL="https://github.com/R4nd0m-us/helpthehomelesscoin"
 REPO_BRANCH="new"
-CORES="$(nproc || echo 2)"
+TOTAL_CORES="$(nproc || echo 4)"
+CORES="$(( TOTAL_CORES / 4 ))"
+[ "$CORES" -lt 1 ] && CORES=1
 BUILD_PREFIX="/opt/helpthehomeless-deps"
 
 echo "Building HelpTheHomeless with original dependency versions on Ubuntu $(lsb_release -rs)"
@@ -88,8 +114,15 @@ fi
   no-camellia no-capieng no-cast no-cms no-dtls1 no-gost no-gmp no-heartbeats \
   no-idea no-jpake no-krb5 no-md2 no-mdc2 no-rc5 no-rdrand no-rfc3779 no-rsax \
   no-sctp no-seed no-sha0 no-static_engine no-whirlpool no-rc2 no-rc4 no-ssl2 no-ssl3
-make -j"$CORES"
-make install
+make -j"$CORES" 2>&1 | tee build.log
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  handle_build_error "OpenSSL" "build" ${PIPESTATUS[0]}
+fi
+make install 2>&1 | tee -a build.log
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  handle_build_error "OpenSSL" "install" ${PIPESTATUS[0]}
+fi
+echo "OpenSSL 1.0.1k build completed successfully"
 popd
 rm -rf "$TMPDIR"
 
@@ -101,8 +134,14 @@ curl -L -o zlib-1.2.11.tar.gz https://zlib.net/fossils/zlib-1.2.11.tar.gz
 tar xf zlib-1.2.11.tar.gz
 cd zlib-1.2.11
 ./configure --prefix="$BUILD_PREFIX" --static
-make -j"$CORES"
-make install
+make -j"$CORES" 2>&1 | tee build.log
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  handle_build_error "zlib" "build" ${PIPESTATUS[0]}
+fi
+make install 2>&1 | tee -a build.log
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  handle_build_error "zlib" "install" ${PIPESTATUS[0]}
+fi
 popd
 rm -rf "$TMPDIR"
 
@@ -117,8 +156,14 @@ cd db-4.8.30.NC/build_unix
 sed -i.bak 's/__atomic_compare_exchange/__atomic_compare_exchange_db/' ../dbinc/atomic.h
 sed -i.bak 's/atomic_init/atomic_init_db/' ../dbinc/atomic.h ../mp/mp_region.c ../mp/mp_mvcc.c ../mp/mp_fget.c ../mutex/mut_method.c ../mutex/mut_tas.c
 ../dist/configure --prefix="$BUILD_PREFIX" --disable-shared --enable-cxx --disable-replication --with-pic
-make -j"$CORES" libdb_cxx-4.8.a libdb-4.8.a
-make install_lib install_include
+make -j"$CORES" libdb_cxx-4.8.a libdb-4.8.a 2>&1 | tee build.log
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  handle_build_error "Berkeley DB" "build" ${PIPESTATUS[0]}
+fi
+make install_lib install_include 2>&1 | tee -a build.log
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  handle_build_error "Berkeley DB" "install" ${PIPESTATUS[0]}
+fi
 popd
 rm -rf "$TMPDIR"
 
