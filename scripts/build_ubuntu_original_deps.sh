@@ -252,9 +252,20 @@ else
     tar xf libevent-2.1.8-stable.tar.gz
     cd libevent-2.1.8-stable
 
+    # Fix arc4random conflicts with system/libbsd functions
+    echo "Patching libevent for arc4random compatibility..."
+
+    # Disable libevent's internal arc4random implementation since we have libbsd
+    sed -i 's/#define HAVE_ARC4RANDOM 1/#undef HAVE_ARC4RANDOM/' config.h.in || true
+    sed -i 's/#define HAVE_ARC4RANDOM_BUF 1/#undef HAVE_ARC4RANDOM_BUF/' config.h.in || true
+
+    # Remove the problematic arc4random_addrandom call entirely
+    sed -i 's/arc4random_addrandom.*;//g' evutil_rand.c
+
     # Configure with static BSD library support for arc4random functions
     export PKG_CONFIG_PATH="$BUILD_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH"
-    CPPFLAGS="-I$BUILD_PREFIX/include" LDFLAGS="-L$BUILD_PREFIX/lib" LIBS="-lbsd" \
+    CPPFLAGS="-I$BUILD_PREFIX/include -DHAVE_ARC4RANDOM -DHAVE_ARC4RANDOM_BUF" \
+    LDFLAGS="-L$BUILD_PREFIX/lib" LIBS="-lbsd" \
     ./configure --prefix="$BUILD_PREFIX" --disable-shared --with-pic --disable-samples --disable-libevent-regress \
                 --disable-openssl
     make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
