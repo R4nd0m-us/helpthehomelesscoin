@@ -230,8 +230,8 @@ else
     # Run autogen.sh first (like original depends)
     ./autogen.sh
 
-    # Configure exactly like original depends
-    ./configure --prefix="$BUILD_PREFIX" --disable-shared --disable-openssl --disable-libevent-regress --with-pic
+    # Configure exactly like original depends (disable samples since we don't need them)
+    ./configure --prefix="$BUILD_PREFIX" --disable-shared --disable-openssl --disable-libevent-regress --with-pic --disable-samples
     make -j"$CORES" 2>&1 | tee -a "$BUILD_LOG"
     if [ ${PIPESTATUS[0]} -ne 0 ]; then
       handle_build_error "libevent" "build" ${PIPESTATUS[0]}
